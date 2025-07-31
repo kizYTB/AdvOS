@@ -1,16 +1,19 @@
 -- ========================================
 -- Installateur AdvOS
 -- ========================================
--- Programme d'installation d'AdvOS depuis GitHub
--- Télécharge et installe AdvOS automatiquement
+-- Programme pour installer AdvOS depuis GitHub
+-- Compatible avec les archives .advinstall
 
 local Installer = {
     VERSION = "1.0.0",
-    GITHUB_REPO = "advos/advos",  -- À modifier selon votre repo
-    RELEASE_URL = "https://api.github.com/repos/KizYTB/AdvOS/releases/latest",
-    ASSETS_URL = "https://github.com/KizYTB/AdvOS/releases/download/",
+    AUTHOR = "AdvOS Team",
     
-    -- Configuration
+    -- Configuration GitHub
+    GITHUB_REPO = "kizYTB/AdvOS",
+    RELEASE_URL = "https://api.github.com/repos/kizYTB/AdvOS/releases/latest",
+    ASSETS_URL = "https://github.com/kizYTB/AdvOS/releases/download/",
+    
+    -- Configuration locale
     config = {
         tempDir = "/temp",
         installDir = "/.AdvOS",
@@ -21,12 +24,16 @@ local Installer = {
     -- Initialisation
     init = function()
         print("=== Installateur AdvOS v" .. Installer.VERSION .. " ===")
-        print("Ce programme va installer AdvOS depuis GitHub")
+        print("Auteur: " .. Installer.AUTHOR)
         print()
         
-        -- Créer les dossiers temporaires
+        -- Créer les dossiers nécessaires
         if not fs.exists(Installer.config.tempDir) then
             fs.makeDir(Installer.config.tempDir)
+        end
+        
+        if not fs.exists(Installer.config.backupDir) then
+            fs.makeDir(Installer.config.backupDir)
         end
         
         return true
@@ -47,124 +54,148 @@ local Installer = {
         end
     end,
     
-    -- Vérifier la connectivité Internet
+    -- Vérifier la connexion internet
     checkInternet = function()
-        Installer.log("Vérification de la connectivité Internet...")
+        Installer.log("Vérification de la connexion internet...")
         
-        local response = http.get("https://httpbin.org/get")
-        if not response then
-            Installer.log("ERREUR: Pas de connexion Internet")
+        local success = pcall(function()
+            local response = http.get("https://httpbin.org/get")
+            return response and response.getResponseCode() == 200
+        end)
+        
+        if success then
+            Installer.log("Connexion internet OK")
+            return true
+        else
+            Installer.log("ERREUR: Pas de connexion internet")
             return false
         end
-        
-        response.close()
-        Installer.log("Connexion Internet OK")
-        return true
     end,
     
-    -- Récupérer les informations de la dernière release
-    getLatestRelease = function()
-        Installer.log("Récupération des informations de la dernière release...")
+    -- Obtenir les informations de la dernière release
+    getLatestReleaseInfo = function()
+        Installer.log("Récupération des informations de release...")
         
-        local response = http.get(Installer.RELEASE_URL)
+        local url = Installer.RELEASE_URL
+        local response = http.get(url)
+        
         if not response then
-            Installer.log("ERREUR: Impossible de récupérer les informations de release")
-            return false
+            Installer.log("ERREUR: Impossible de contacter GitHub")
+            return nil
         end
         
         local content = response.readAll()
         response.close()
         
-        local success, release = pcall(textutils.unserializeJSON, content)
-        if not success or not release then
-            Installer.log("ERREUR: Format de réponse GitHub invalide")
-            return false
+        -- Parser le JSON (simplifié)
+        local releaseInfo = {}
+        
+        -- Extraire le tag_name
+        local tagMatch = content:match('"tag_name"%s*:%s*"([^"]+)"')
+        if tagMatch then
+            releaseInfo.tag_name = tagMatch
         end
         
-        Installer.log("Release trouvée: " .. release.tag_name)
-        Installer.log("Description: " .. (release.body or "Aucune description"))
-        
-        return release
-    end,
-    
-    -- Trouver le fichier .advinstall dans les assets
-    findAdvInstallFile = function(release)
-        Installer.log("Recherche du fichier .advinstall...")
-        
-        for _, asset in ipairs(release.assets) do
-            if asset.name:match("%.advinstall$") then
-                Installer.log("Fichier trouvé: " .. asset.name)
-                Installer.log("Taille: " .. asset.size .. " bytes")
-                Installer.log("Téléchargements: " .. asset.download_count)
-                return asset
+        -- Extraire les assets
+        local assets = {}
+        for asset in content:gmatch('"browser_download_url"%s*:%s*"([^"]+)"') do
+            if asset:match("%.advinstall$") then
+                table.insert(assets, asset)
             end
         end
         
-        Installer.log("ERREUR: Aucun fichier .advinstall trouvé dans la release")
-        return false
+        releaseInfo.assets = assets
+        
+        if releaseInfo.tag_name and #releaseInfo.assets > 0 then
+            Installer.log("Release trouvée: " .. releaseInfo.tag_name)
+            Installer.log("Assets disponibles: " .. #releaseInfo.assets)
+            return releaseInfo
+        else
+            Installer.log("ERREUR: Aucune release .advinstall trouvée")
+            return nil
+        end
     end,
     
-    -- Télécharger le fichier .advinstall
-    downloadAdvInstall = function(asset, release)
-        local downloadUrl = asset.browser_download_url
-        local localPath = fs.combine(Installer.config.tempDir, asset.name)
+    -- Télécharger un asset
+    downloadAsset = function(url, filename)
+        Installer.log("Téléchargement: " .. filename)
         
-        Installer.log("Téléchargement de " .. asset.name .. "...")
-        Installer.log("URL: " .. downloadUrl)
-        
-        local response = http.get(downloadUrl)
+        local response = http.get(url)
         if not response then
-            Installer.log("ERREUR: Impossible de télécharger le fichier")
+            Installer.log("ERREUR: Impossible de télécharger " .. filename)
             return false
         end
         
         local content = response.readAll()
         response.close()
         
-        -- Sauvegarder le fichier
-        local file = fs.open(localPath, "wb")
+        local file = fs.open(filename, "wb")
         if not file then
-            Installer.log("ERREUR: Impossible de sauvegarder le fichier")
+            Installer.log("ERREUR: Impossible de créer " .. filename)
             return false
         end
         
         file.write(content)
         file.close()
         
-        Installer.log("Téléchargement terminé: " .. localPath)
-        Installer.log("Taille téléchargée: " .. #content .. " bytes")
-        
-        return localPath
+        Installer.log("Téléchargement terminé: " .. filename .. " (" .. #content .. " bytes)")
+        return true
     end,
     
-    -- Créer une sauvegarde de l'installation actuelle
-    createBackup = function()
-        Installer.log("Création d'une sauvegarde de l'installation actuelle...")
+    -- Sauvegarder l'installation existante
+    backupExistingInstallation = function()
+        Installer.log("Sauvegarde de l'installation existante...")
         
-        if fs.exists(Installer.config.installDir) then
-            local backupPath = Installer.config.backupDir .. "_" .. os.epoch("local")
-            
-            if fs.exists(backupPath) then
-                fs.delete(backupPath)
+        if not fs.exists(Installer.config.installDir) then
+            Installer.log("Aucune installation existante à sauvegarder")
+            return true
+        end
+        
+        local backupPath = Installer.config.backupDir .. "/backup_" .. os.epoch("local")
+        
+        -- Copier le dossier
+        local function copyDir(src, dst)
+            if not fs.exists(dst) then
+                fs.makeDir(dst)
             end
             
-            fs.move(Installer.config.installDir, backupPath)
-            Installer.log("Sauvegarde créée: " .. backupPath)
-            return backupPath
-        else
-            Installer.log("Aucune installation existante à sauvegarder")
-            return nil
+            local items = fs.list(src)
+            for _, item in ipairs(items) do
+                local srcPath = fs.combine(src, item)
+                local dstPath = fs.combine(dst, item)
+                
+                if fs.isDir(srcPath) then
+                    copyDir(srcPath, dstPath)
+                else
+                    local file = fs.open(srcPath, "rb")
+                    if file then
+                        local content = file.readAll()
+                        file.close()
+                        
+                        local dstFile = fs.open(dstPath, "wb")
+                        if dstFile then
+                            dstFile.write(content)
+                            dstFile.close()
+                        end
+                    end
+                end
+            end
         end
+        
+        copyDir(Installer.config.installDir, backupPath)
+        
+        Installer.log("Sauvegarde créée: " .. backupPath)
+        return true
     end,
     
-    -- Installer AdvOS depuis le fichier .advinstall
-    installAdvOS = function(advInstallPath)
-        Installer.log("Installation d'AdvOS depuis " .. advInstallPath .. "...")
+    -- Installer l'archive
+    installArchive = function(archivePath)
+        Installer.log("Installation de l'archive...")
         
-        -- Lire le fichier .advinstall
-        local file = fs.open(advInstallPath, "rb")
+        -- Lire l'archive
+        local file = fs.open(archivePath, "rb")
         if not file then
-            Installer.log("ERREUR: Impossible d'ouvrir le fichier .advinstall")
+            Installer.log("ERREUR: Impossible d'ouvrir l'archive")
             return false
         end
         
@@ -174,51 +205,49 @@ local Installer = {
         -- Désérialiser l'archive
         local success, archive = pcall(textutils.unserialize, content)
         if not success or not archive then
-            Installer.log("ERREUR: Format de fichier .advinstall invalide")
+            Installer.log("ERREUR: Format d'archive invalide")
             return false
         end
         
-        Installer.log("Archive détectée:")
-        Installer.log("  Version: " .. (archive.version or "Inconnue"))
-        Installer.log("  Fichiers: " .. (archive.fileCount or 0))
-        Installer.log("  Créé: " .. os.date("%Y-%m-%d %H:%M:%S", archive.created or 0))
-        
-        -- Créer le dossier d'installation
-        if not fs.exists(Installer.config.installDir) then
-            fs.makeDir(Installer.config.installDir)
+        -- Vérifier la structure
+        if not archive.files then
+            Installer.log("ERREUR: Archive corrompue (pas de fichiers)")
+            return false
         end
         
-        -- Installer les fichiers
-        local installed = 0
-        local errors = 0
+        -- Supprimer l'ancienne installation
+        if fs.exists(Installer.config.installDir) then
+            fs.delete(Installer.config.installDir)
+        end
         
-        for path, data in pairs(archive.files) do
+        -- Créer le dossier d'installation
+        fs.makeDir(Installer.config.installDir)
+        
+        -- Installer les fichiers
+        local installedCount = 0
+        for path, fileInfo in pairs(archive.files) do
             local fullPath = fs.combine(Installer.config.installDir, path)
-            local dir = fs.getDir(fullPath)
+            local dirPath = fs.getDir(fullPath)
             
             -- Créer le dossier parent si nécessaire
-            if not fs.exists(dir) then
-                fs.makeDir(dir)
+            if not fs.exists(dirPath) then
+                fs.makeDir(dirPath)
             end
             
             -- Écrire le fichier
-            local file = fs.open(fullPath, "w")
+            local file = fs.open(fullPath, "wb")
             if file then
-                file.write(data.content)
+                file.write(fileInfo.content)
                 file.close()
-                installed = installed + 1
+                installedCount = installedCount + 1
                 Installer.log("Installé: " .. path)
             else
-                errors = errors + 1
-                Installer.log("ERREUR: Impossible d'installer " .. path)
+                Installer.log("ERREUR: Impossible d'écrire " .. path)
             end
         end
         
-        Installer.log("Installation terminée:")
-        Installer.log("  Fichiers installés: " .. installed)
-        Installer.log("  Erreurs: " .. errors)
-        
-        return errors == 0
+        Installer.log("Installation terminée: " .. installedCount .. " fichiers")
+        return true
     end,
     
     -- Vérifier l'installation
@@ -227,8 +256,7 @@ local Installer = {
         
         local requiredFiles = {
             "boot.lua",
-            "sys/shell/shell.lua",
-            "tools/compressor.lua"
+            "sys/shell/shell.lua"
         }
         
         local missing = 0
@@ -255,13 +283,18 @@ local Installer = {
     cleanup = function()
         Installer.log("Nettoyage des fichiers temporaires...")
         
-        local files = fs.list(Installer.config.tempDir)
-        for _, file in ipairs(files) do
-            local path = fs.combine(Installer.config.tempDir, file)
-            if fs.exists(path) then
-                fs.delete(path)
-                Installer.log("Supprimé: " .. file)
+        -- Supprimer les fichiers temporaires
+        local tempFiles = fs.list(Installer.config.tempDir)
+        for _, file in ipairs(tempFiles) do
+            local filePath = fs.combine(Installer.config.tempDir, file)
+            if not fs.isDir(filePath) then
+                fs.delete(filePath)
             end
+        end
+        
+        -- Supprimer le fichier de log
+        if fs.exists(Installer.config.logFile) then
+            fs.delete(Installer.config.logFile)
         end
         
         Installer.log("Nettoyage terminé")
@@ -269,71 +302,54 @@ local Installer = {
     
     -- Installation complète
     install = function()
-        Installer.log("Début de l'installation d'AdvOS...")
+        Installer.log("Début de l'installation AdvOS...")
         
         -- Initialisation
         if not Installer.init() then
             return false
         end
         
-        -- Vérifier la connectivité
+        -- Vérifier la connexion internet
         if not Installer.checkInternet() then
             return false
         end
         
-        -- Récupérer les informations de release
-        local release = Installer.getLatestRelease()
-        if not release then
+        -- Obtenir les informations de release
+        local releaseInfo = Installer.getLatestReleaseInfo()
+        if not releaseInfo then
             return false
         end
         
-        -- Trouver le fichier .advinstall
-        local asset = Installer.findAdvInstallFile(release)
-        if not asset then
+        -- Télécharger le premier asset .advinstall
+        local assetUrl = releaseInfo.assets[1]
+        local assetName = "advos_" .. releaseInfo.tag_name .. ".advinstall"
+        local assetPath = fs.combine(Installer.config.tempDir, assetName)
+        
+        if not Installer.downloadAsset(assetUrl, assetPath) then
             return false
         end
         
-        -- Télécharger le fichier
-        local advInstallPath = Installer.downloadAdvInstall(asset, release)
-        if not advInstallPath then
+        -- Sauvegarder l'installation existante
+        if not Installer.backupExistingInstallation() then
             return false
         end
         
-        -- Créer une sauvegarde
-        local backupPath = Installer.createBackup()
-        
-        -- Installer AdvOS
-        local success = Installer.installAdvOS(advInstallPath)
-        if not success then
-            Installer.log("ERREUR: Échec de l'installation")
-            
-            -- Restaurer la sauvegarde si elle existe
-            if backupPath then
-                Installer.log("Restauration de la sauvegarde...")
-                if fs.exists(Installer.config.installDir) then
-                    fs.delete(Installer.config.installDir)
-                end
-                fs.move(backupPath, Installer.config.installDir)
-                Installer.log("Sauvegarde restaurée")
-            end
-            
+        -- Installer l'archive
+        if not Installer.installArchive(assetPath) then
             return false
         end
         
         -- Vérifier l'installation
         if not Installer.verifyInstallation() then
-            Installer.log("ERREUR: Installation incomplète")
             return false
         end
         
         -- Nettoyer
         Installer.cleanup()
         
-        Installer.log("=== Installation d'AdvOS terminée avec succès ===")
-        Installer.log("Redémarrage dans 5 secondes...")
-        
-        os.sleep(5)
-        os.reboot()
+        Installer.log("=== Installation AdvOS terminée avec succès ===")
+        Installer.log("Version installée: " .. releaseInfo.tag_name)
+        Installer.log("Dossier d'installation: " .. Installer.config.installDir)
         
         return true
     end,
@@ -346,15 +362,16 @@ local Installer = {
         print("  install_advos.lua help     - Affiche cette aide")
         print()
         print("Le programme va:")
-        print("  1. Télécharger la dernière release depuis GitHub")
-        print("  2. Créer une sauvegarde de l'installation actuelle")
-        print("  3. Installer AdvOS")
-        print("  4. Vérifier l'installation")
-        print("  5. Redémarrer le système")
+        print("  1. Vérifier la connexion internet")
+        print("  2. Télécharger la dernière release depuis GitHub")
+        print("  3. Sauvegarder l'installation existante")
+        print("  4. Installer AdvOS dans /.AdvOS")
+        print("  5. Vérifier l'installation")
         print()
         print("Configuration:")
         print("  Repository: " .. Installer.GITHUB_REPO)
         print("  Dossier d'installation: " .. Installer.config.installDir)
+        print("  Dossier de sauvegarde: " .. Installer.config.backupDir)
         print("  Fichier de log: " .. Installer.config.logFile)
     end
 }
@@ -363,34 +380,22 @@ local Installer = {
 -- POINT D'ENTRÉE PRINCIPAL
 -- ========================================
 
-local function main()
-    local args = {...}
+-- Exécuter si appelé directement
+if not pcall(function() return _G.ADVOS_SHELL end) then
+    -- Par défaut, installer
+    local command = "install"
     
-    if #args == 0 or args[1] == "help" then
+    if command == "help" then
         Installer.showHelp()
-        return
-    end
-    
-    local command = args[1]
-    
-    if command == "install" then
+    elseif command == "install" then
         local success = Installer.install()
         if not success then
             print("Installation échouée. Consultez le log: " .. Installer.config.logFile)
-            return false
         end
-        return true
-        
     else
         print("Commande inconnue: " .. command)
         print("Utilisez 'help' pour voir les commandes disponibles")
-        return false
     end
-end
-
--- Exécuter si appelé directement
-if not pcall(function() return _G.ADVOS_SHELL end) then
-    main(...)
 end
 
 -- Exporter pour utilisation dans AdvOS
