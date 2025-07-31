@@ -7,8 +7,8 @@
 local Installer = {
     VERSION = "1.0.0",
     GITHUB_REPO = "advos/advos",  -- À modifier selon votre repo
-    RELEASE_URL = "https://api.github.com/repos/advos/advos/releases/latest",
-    ASSETS_URL = "https://github.com/advos/advos/releases/download/",
+    RELEASE_URL = "https://api.github.com/repos/KizYTB/AdvOS/releases/latest",
+    ASSETS_URL = "https://github.com/KizYTB/AdvOS/releases/download/",
     
     -- Configuration
     config = {
