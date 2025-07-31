@@ -1,0 +1,52 @@
+{
+  [ "/" ] = {
+    modified = 6.196,
+    created = 6.196,
+    content = {
+      [ ".AdvOS" ] = {
+        modified = 6.236,
+        created = 6.236,
+        content = {
+          apps = {
+            modified = 6.236,
+            created = 6.236,
+            content = {},
+            type = "directory",
+          },
+          system = {
+            modified = 6.236,
+            created = 6.236,
+            content = {},
+            type = "directory",
+          },
+          temp = {
+            modified = 6.236,
+            created = 6.236,
+            content = {},
+            type = "directory",
+          },
+        },
+        type = "directory",
+      },
+      home = {
+        modified = 6.236,
+        created = 6.236,
+        content = {},
+        type = "directory",
+      },
+      etc = {
+        modified = 6.236,
+        created = 6.236,
+        content = {},
+        type = "directory",
+      },
+      bin = {
+        modified = 6.236,
+        created = 6.236,
+        content = {},
+        type = "directory",
+      },
+    },
+    type = "directory",
+  },
+}
