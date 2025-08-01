@@ -382,20 +382,10 @@ local Installer = {
 
 -- Exécuter si appelé directement
 if not pcall(function() return _G.ADVOS_SHELL end) then
-    -- Récupérer les arguments de ligne de commande
-    local args = {...}
-    local command = args[1] or "install"
-    
-    if command == "help" then
-        Installer.showHelp()
-    elseif command == "install" then
-        local success = Installer.install()
-        if not success then
-            print("Installation échouée. Consultez le log: " .. Installer.config.logFile)
-        end
-    else
-        print("Commande inconnue: " .. command)
-        print("Utilisez 'help' pour voir les commandes disponibles")
+    -- Installation par défaut
+    local success = Installer.install()
+    if not success then
+        print("Installation échouée. Consultez le log: " .. Installer.config.logFile)
     end
 end
 
